@@ -1,7 +1,7 @@
 name: device_restricted_auth
 description: Device-based login restriction for Flutter apps with Firebase (Android + Windows Desktop)
 version: 0.1.0
-homepage: https://github.com/DevStudio2k25/device_restricted_auth
+homepage: https://github.com/DevStudio2k25/device_restricted_auth.git
 
 environment:
   sdk: '>=3.0.6 <4.0.0'

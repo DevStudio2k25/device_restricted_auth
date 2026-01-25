@@ -7,6 +7,20 @@ import 'device_id_provider.dart';
 import '../core/models/device_metadata.dart';
 import '../core/exceptions/device_restriction_exceptions.dart';
 
+/// Retrieves Android device hardware ID using device_info_plus.
+///
+/// This provider uses the Android ID (`androidId`) which is unique per device
+/// and app installation. The ID persists across app reinstalls but may change
+/// if the device is factory reset.
+///
+/// Example:
+/// ```dart
+/// final provider = AndroidDeviceIdProvider();
+/// final deviceId = await provider.getDeviceId();
+/// ```
+///
+/// Throws [PlatformNotSupportedException] if used on non-Android platforms.
+/// Throws [DeviceIdNotFoundException] if the device ID cannot be retrieved.
 class AndroidDeviceIdProvider implements DeviceIdProvider {
   final DeviceInfoPlugin _deviceInfo;
 

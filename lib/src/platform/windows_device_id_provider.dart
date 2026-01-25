@@ -7,6 +7,19 @@ import 'device_id_provider.dart';
 import '../core/models/device_metadata.dart';
 import '../core/exceptions/device_restriction_exceptions.dart';
 
+/// Retrieves Windows device identifier using device_info_plus.
+///
+/// This provider uses the Windows device ID which is unique to the device.
+/// The ID is hardware-based and persists across app reinstalls.
+///
+/// Example:
+/// ```dart
+/// final provider = WindowsDeviceIdProvider();
+/// final deviceId = await provider.getDeviceId();
+/// ```
+///
+/// Throws [PlatformNotSupportedException] if used on non-Windows platforms.
+/// Throws [DeviceIdNotFoundException] if the device ID cannot be retrieved.
 class WindowsDeviceIdProvider implements DeviceIdProvider {
   final DeviceInfoPlugin _deviceInfo;
 

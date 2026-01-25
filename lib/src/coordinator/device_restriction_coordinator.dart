@@ -9,6 +9,18 @@ import '../firebase/device_repository.dart';
 import '../platform/device_id_provider.dart';
 import '../core/exceptions/device_restriction_exceptions.dart';
 
+/// Orchestrates device restriction logic during authentication operations.
+///
+/// This is the main entry point for implementing device-based login restrictions.
+/// It coordinates between device ID providers, Firebase repository, and validation policies.
+///
+/// Example:
+/// ```dart
+/// final coordinator = DeviceRestrictionCoordinator(
+///   deviceRepository: FirestoreDeviceRepository(),
+///   deviceIdProvider: AndroidDeviceIdProvider(),
+/// );
+/// ```
 class DeviceRestrictionCoordinator {
   final DeviceRepository deviceRepository;
   final DeviceIdProvider deviceIdProvider;
@@ -23,8 +35,22 @@ class DeviceRestrictionCoordinator {
               policy: DeviceBindingPolicy(),
             );
 
-  /// Verify and bind device during signup
-  /// Throws exception if device is already bound to another account
+  /// Verifies that the current device is available for a new account signup.
+  ///
+  /// Call this before creating a new Firebase user account to ensure the device
+  /// is not already registered to another account.
+  ///
+  /// Throws [DeviceAlreadyBoundException] if the device is already bound to another account.
+  ///
+  /// Example:
+  /// ```dart
+  /// try {
+  ///   await coordinator.verifyDeviceForSignup();
+  ///   // Proceed with Firebase account creation
+  /// } on DeviceAlreadyBoundException catch (e) {
+  ///   // Show error: device already registered
+  /// }
+  /// ```
   Future<void> verifyDeviceForSignup() async {
     final deviceId = await deviceIdProvider.getDeviceId();
     final platform = deviceIdProvider.getPlatformName();
@@ -50,8 +76,24 @@ class DeviceRestrictionCoordinator {
     print('✅ Device is available for new account');
   }
 
-  /// Verify and bind device during login
-  /// Binds device on first login, validates on subsequent logins
+  /// Verifies and binds the current device to the user account.
+  ///
+  /// On first login from a platform (Android/Desktop), this permanently binds
+  /// the device to the account. On subsequent logins, it validates that the
+  /// device matches the bound device.
+  ///
+  /// Throws [DeviceMismatchException] if the user tries to login from a different device.
+  ///
+  /// Example:
+  /// ```dart
+  /// try {
+  ///   await coordinator.verifyAndBindDevice(user.uid);
+  ///   // Login successful
+  /// } on DeviceMismatchException catch (e) {
+  ///   // Device mismatch - sign out user
+  ///   await FirebaseAuth.instance.signOut();
+  /// }
+  /// ```
   Future<void> verifyAndBindDevice(String userId) async {
     final deviceId = await deviceIdProvider.getDeviceId();
     final platform = deviceIdProvider.getPlatformName();
@@ -103,7 +145,17 @@ class DeviceRestrictionCoordinator {
     print('✅ Device Binding Verified Successfully!');
   }
 
-  /// Initialize device document for new user
+  /// Initializes the device document in Firestore for a new user.
+  ///
+  /// Creates a document in the `user_devices` collection with null values
+  /// for both Android and Desktop platforms. Call this immediately after
+  /// creating a new Firebase user account.
+  ///
+  /// Example:
+  /// ```dart
+  /// final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(...);
+  /// await coordinator.initializeDeviceDocument(credential.user!.uid);
+  /// ```
   Future<void> initializeDeviceDocument(String userId) async {
     await deviceRepository.initializeDeviceDocument(userId);
   }

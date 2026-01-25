@@ -5,6 +5,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'device_repository.dart';
 import '../core/models/device_binding.dart';
 
+/// Firestore implementation of [DeviceRepository].
+///
+/// Stores device bindings in the `user_devices` collection in Firestore.
+/// Each document is keyed by user ID and contains platform-specific device data.
+///
+/// Example:
+/// ```dart
+/// final repository = FirestoreDeviceRepository();
+/// final binding = await repository.getBinding(userId, 'android');
+/// ```
 class FirestoreDeviceRepository implements DeviceRepository {
   final FirebaseFirestore _firestore;
 
