@@ -4,11 +4,28 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:device_restricted_auth/device_restricted_auth.dart';
 
+// ⚠️ IMPORTANT: Firebase Setup Required!
+// This example does NOT include Firebase configuration files.
+// You must set up Firebase before running this app.
+//
+// Quick Setup:
+// 1. Create Firebase project at https://console.firebase.google.com
+// 2. Enable Email/Password Authentication
+// 3. Create Firestore database
+// 4. For Android: Add google-services.json to android/app/
+// 5. For Windows: Run 'flutterfire configure' to generate firebase_options.dart
+//
+// See example/README.md for detailed instructions.
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase (you need to add your firebase_options.dart)
-  await Firebase.initializeApp();
+  // Initialize Firebase
+  // For Android: google-services.json handles configuration automatically
+  // For Windows: Uncomment the line below and import firebase_options.dart
+  await Firebase.initializeApp(
+      // options: DefaultFirebaseOptions.currentPlatform,
+      );
 
   runApp(const MyApp());
 }
@@ -52,12 +69,15 @@ class _AuthScreenState extends State<AuthScreen> {
   void initState() {
     super.initState();
 
-    // Choose device ID provider based on platform
+    // Step 1: Choose device ID provider based on current platform
+    // - Android uses AndroidDeviceIdProvider (gets androidId)
+    // - Windows uses WindowsDeviceIdProvider (gets Windows device ID)
     final deviceIdProvider = Platform.isAndroid
         ? AndroidDeviceIdProvider()
         : WindowsDeviceIdProvider();
 
-    // Create the coordinator
+    // Step 2: Create the coordinator with Firebase repository
+    // This coordinator handles all device restriction logic
     _coordinator = DeviceRestrictionCoordinator(
       deviceRepository: FirestoreDeviceRepository(),
       deviceIdProvider: deviceIdProvider,
