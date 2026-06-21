@@ -1,3 +1,8 @@
+## 0.1.1
+
+- Migrated Android Device ID from system Build ID to Secure Android ID (SSAID) to prevent collisions on devices with the same OS build.
+- Added `android_id` dependency.
+
 ## 0.1.0
 
 **Initial Release**

@@ -3,6 +3,7 @@
 
 import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:android_id/android_id.dart';
 import 'device_id_provider.dart';
 import '../core/models/device_metadata.dart';
 import '../core/exceptions/device_restriction_exceptions.dart';
@@ -38,11 +39,12 @@ class AndroidDeviceIdProvider implements DeviceIdProvider {
 
     try {
       final androidInfo = await _deviceInfo.androidInfo;
-      final deviceId = androidInfo.id;
+      const androidIdPlugin = AndroidId();
+      final deviceId = await androidIdPlugin.getId();
 
-      if (deviceId.isEmpty) {
+      if (deviceId == null || deviceId.isEmpty) {
         throw const DeviceIdNotFoundException(
-          message: 'Failed to get Android device ID',
+          message: 'Failed to get Android secure device ID (SSAID)',
         );
       }
 
