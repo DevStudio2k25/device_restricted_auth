@@ -8,6 +8,8 @@ export 'src/core/models/device_binding.dart';
 export 'src/core/models/device_metadata.dart';
 export 'src/core/models/auth_result.dart';
 export 'src/core/models/validation_result.dart';
+export 'src/core/models/build_mode.dart';
+export 'src/core/models/user_info.dart';
 
 // Core Exceptions
 export 'src/core/exceptions/device_restriction_exceptions.dart';

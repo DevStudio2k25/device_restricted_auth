@@ -2,6 +2,7 @@
 // Retrieves Windows device identifier
 
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'device_id_provider.dart';
 import '../core/models/device_metadata.dart';
@@ -45,13 +46,13 @@ class WindowsDeviceIdProvider implements DeviceIdProvider {
         );
       }
 
-      print('💻 Windows Device Info:');
-      print('   Device ID: $deviceId');
-      print('   Computer Name: ${windowsInfo.computerName}');
+      debugPrint('💻 Windows Device Info:');
+      debugPrint('   Device ID: $deviceId');
+      debugPrint('   Computer Name: ${windowsInfo.computerName}');
 
       return deviceId;
     } catch (e) {
-      print('❌ Error getting Windows device ID: $e');
+      debugPrint('❌ Error getting Windows device ID: $e');
       throw DeviceIdNotFoundException(
         message: 'Failed to retrieve Windows device information: $e',
       );

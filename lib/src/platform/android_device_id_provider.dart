@@ -2,22 +2,28 @@
 // Retrieves Android hardware device ID
 
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:android_id/android_id.dart';
 import 'device_id_provider.dart';
 import '../core/models/device_metadata.dart';
+import '../core/models/build_mode.dart';
 import '../core/exceptions/device_restriction_exceptions.dart';
 
-/// Retrieves Android device hardware ID using device_info_plus.
+/// Retrieves Android device hardware ID using [android_id] (SSAID).
 ///
-/// This provider uses the Android ID (`androidId`) which is unique per device
-/// and app installation. The ID persists across app reinstalls but may change
-/// if the device is factory reset.
+/// The SSAID (`Settings.Secure.ANDROID_ID`) is unique per device **and**
+/// signing key on Android 8+. This means debug and release builds produce
+/// different SSAIDs on the same physical device. This provider accounts for
+/// this by returning a **build-mode-aware platform slot name**
+/// (`android_debug` or `android_release`) so both IDs can coexist under the
+/// same account in Firestore without conflict.
 ///
 /// Example:
 /// ```dart
 /// final provider = AndroidDeviceIdProvider();
-/// final deviceId = await provider.getDeviceId();
+/// final deviceId = await provider.getDeviceId();  // SSAID string
+/// final slot     = provider.getPlatformName();     // "android_debug" or "android_release"
 /// ```
 ///
 /// Throws [PlatformNotSupportedException] if used on non-Android platforms.
@@ -48,25 +54,34 @@ class AndroidDeviceIdProvider implements DeviceIdProvider {
         );
       }
 
-      print('📱 Android Device Info:');
-      print('   Device ID (androidId): $deviceId');
-      print('   Brand: ${androidInfo.brand}');
-      print('   Model: ${androidInfo.model}');
-      print('   Manufacturer: ${androidInfo.manufacturer}');
-      print('   Android Version: ${androidInfo.version.release}');
+      final slot = getPlatformName();
+      debugPrint('📱 Android Device Info:');
+      debugPrint('   Device ID (SSAID): $deviceId');
+      debugPrint('   Firestore Slot: $slot');
+      debugPrint('   Brand: ${androidInfo.brand}');
+      debugPrint('   Model: ${androidInfo.model}');
+      debugPrint('   Manufacturer: ${androidInfo.manufacturer}');
+      debugPrint('   Android Version: ${androidInfo.version.release}');
 
       return deviceId;
     } catch (e) {
-      print('❌ Error getting Android device ID: $e');
+      debugPrint('❌ Error getting Android device ID: $e');
       throw DeviceIdNotFoundException(
         message: 'Failed to retrieve Android device information: $e',
       );
     }
   }
 
+  /// Returns the Firestore slot name for the current build mode.
+  ///
+  /// - Debug / Profile build → `"android_debug"`
+  /// - Release build         → `"android_release"`
+  ///
+  /// This ensures both build variants can coexist under the same user account
+  /// without forcing re-login when switching between them.
   @override
   String getPlatformName() {
-    return 'android';
+    return 'android_${BuildModeDetector.current().slotName}';
   }
 
   @override
@@ -79,6 +94,7 @@ class AndroidDeviceIdProvider implements DeviceIdProvider {
       additional: {
         'manufacturer': androidInfo.manufacturer,
         'sdkInt': androidInfo.version.sdkInt,
+        'buildSlot': getPlatformName(),
       },
     );
   }

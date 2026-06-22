@@ -1,8 +1,11 @@
 // 🔐 Device Restriction Coordinator
 // Orchestrates device restriction logic during auth operations
 
+import 'package:flutter/foundation.dart';
 import '../core/models/device_binding.dart';
 import '../core/models/validation_result.dart';
+import '../core/models/build_mode.dart';
+import '../core/models/user_info.dart';
 import '../core/validators/device_binding_validator.dart';
 import '../core/policies/device_binding_policy.dart';
 import '../firebase/device_repository.dart';
@@ -12,13 +15,40 @@ import '../core/exceptions/device_restriction_exceptions.dart';
 /// Orchestrates device restriction logic during authentication operations.
 ///
 /// This is the main entry point for implementing device-based login restrictions.
-/// It coordinates between device ID providers, Firebase repository, and validation policies.
+/// It coordinates between device ID providers, the Firestore repository, and
+/// validation policies.
+///
+/// ## Android dual-slot support
+/// On Android, debug and release builds receive separate Firestore slots
+/// (`android_debug` / `android_release`) so both can coexist under the same
+/// account without forcing re-login when switching build flavors.
+///
+/// ## User metadata
+/// Pass a [DeviceAuthUserInfo] to [verifyAndBindDevice] and
+/// [initializeDeviceDocument] to store `userName`, `email`, and any custom
+/// fields at the document level for easy admin queries.
 ///
 /// Example:
 /// ```dart
 /// final coordinator = DeviceRestrictionCoordinator(
 ///   deviceRepository: FirestoreDeviceRepository(),
 ///   deviceIdProvider: AndroidDeviceIdProvider(),
+/// );
+///
+/// // On signup
+/// await coordinator.initializeDeviceDocument(
+///   user.uid,
+///   userInfo: DeviceAuthUserInfo(
+///     userName: 'Rahul',
+///     email: user.email,
+///     customFields: {'plan': 'free'},
+///   ),
+/// );
+///
+/// // On every login
+/// await coordinator.verifyAndBindDevice(
+///   user.uid,
+///   userInfo: DeviceAuthUserInfo(userName: 'Rahul', email: user.email),
 /// );
 /// ```
 class DeviceRestrictionCoordinator {
@@ -35,12 +65,18 @@ class DeviceRestrictionCoordinator {
               policy: DeviceBindingPolicy(),
             );
 
+  // ---------------------------------------------------------------------------
+  // verifyDeviceForSignup
+  // ---------------------------------------------------------------------------
+
   /// Verifies that the current device is available for a new account signup.
   ///
-  /// Call this before creating a new Firebase user account to ensure the device
-  /// is not already registered to another account.
+  /// Checks **all** Android slots (debug + release + legacy) to prevent the
+  /// same physical device from being registered to multiple accounts.
   ///
-  /// Throws [DeviceAlreadyBoundException] if the device is already bound to another account.
+  /// Call this **before** creating a new Firebase Auth user account.
+  ///
+  /// Throws [DeviceAlreadyBoundException] if the device is already bound.
   ///
   /// Example:
   /// ```dart
@@ -48,23 +84,31 @@ class DeviceRestrictionCoordinator {
   ///   await coordinator.verifyDeviceForSignup();
   ///   // Proceed with Firebase account creation
   /// } on DeviceAlreadyBoundException catch (e) {
-  ///   // Show error: device already registered
+  ///   // Show error
   /// }
   /// ```
   Future<void> verifyDeviceForSignup() async {
     final deviceId = await deviceIdProvider.getDeviceId();
     final platform = deviceIdProvider.getPlatformName();
 
-    print('🔍 Checking if device is already bound...');
-    print('   Device ID: $deviceId');
-    print('   Platform: $platform');
+    // Derive base platform for cross-slot search
+    // e.g. "android_debug" → "android", "desktop" → "desktop"
+    final basePlatform = platform.contains('_')
+        ? platform.substring(0, platform.indexOf('_'))
+        : platform;
 
-    // Check if device is already bound to another account
-    final boundUsers =
-        await deviceRepository.findUsersByDevice(deviceId, platform);
+    debugPrint('🔍 Checking if device is already bound...');
+    debugPrint('   Device ID: $deviceId');
+    debugPrint('   Slot: $platform');
+    debugPrint('   Base Platform: $basePlatform');
+
+    final boundUsers = await deviceRepository.findUsersByDeviceAnySlot(
+      deviceId,
+      basePlatform,
+    );
 
     if (boundUsers.isNotEmpty) {
-      throw DeviceAlreadyBoundException(
+      throw const DeviceAlreadyBoundException(
         boundToEmail: 'another account',
         message: '🚫 Device Already Registered!\n\n'
             'This device is already linked to another account.\n\n'
@@ -73,42 +117,61 @@ class DeviceRestrictionCoordinator {
       );
     }
 
-    print('✅ Device is available for new account');
+    debugPrint('✅ Device is available for new account');
   }
+
+  // ---------------------------------------------------------------------------
+  // verifyAndBindDevice
+  // ---------------------------------------------------------------------------
 
   /// Verifies and binds the current device to the user account.
   ///
-  /// On first login from a platform (Android/Desktop), this permanently binds
-  /// the device to the account. On subsequent logins, it validates that the
-  /// device matches the bound device.
+  /// - **First login on this slot**: permanently binds device + stores user info.
+  /// - **Subsequent logins**: validates device ID matches, updates activity +
+  ///   refreshes user info.
   ///
-  /// Throws [DeviceMismatchException] if the user tries to login from a different device.
+  /// The [userInfo] parameter is optional but recommended — it keeps
+  /// `userName`, `email`, and any custom fields up to date on every login.
+  ///
+  /// Throws [DeviceMismatchException] if a different device tries to use this slot.
   ///
   /// Example:
   /// ```dart
   /// try {
-  ///   await coordinator.verifyAndBindDevice(user.uid);
-  ///   // Login successful
+  ///   await coordinator.verifyAndBindDevice(
+  ///     user.uid,
+  ///     userInfo: DeviceAuthUserInfo(
+  ///       userName: 'Rahul',
+  ///       email: user.email,
+  ///       customFields: {'plan': 'premium'},
+  ///     ),
+  ///   );
   /// } on DeviceMismatchException catch (e) {
-  ///   // Device mismatch - sign out user
   ///   await FirebaseAuth.instance.signOut();
   /// }
   /// ```
-  Future<void> verifyAndBindDevice(String userId) async {
+  Future<void> verifyAndBindDevice(
+    String userId, {
+    DeviceAuthUserInfo? userInfo,
+  }) async {
     final deviceId = await deviceIdProvider.getDeviceId();
     final platform = deviceIdProvider.getPlatformName();
 
-    print('🔐 Verifying Device Binding...');
-    print('   User ID: $userId');
-    print('   Device ID: $deviceId');
-    print('   Platform: $platform');
+    // Determine current build mode for binding metadata
+    final buildMode = BuildModeDetector.current();
 
-    // Get existing binding
+    debugPrint('🔐 Verifying Device Binding...');
+    debugPrint('   User ID: $userId');
+    debugPrint('   Device ID: $deviceId');
+    debugPrint('   Slot: $platform');
+    debugPrint('   Build Mode: ${buildMode.name}');
+
+    // Get existing binding for this specific slot
     final existingBinding = await deviceRepository.getBinding(userId, platform);
 
-    // If no binding exists, create one (first-time login)
+    // First-time login on this slot → bind permanently
     if (existingBinding == null || existingBinding.deviceId.isEmpty) {
-      print('🆕 First time login on $platform - Binding device permanently...');
+      debugPrint('🆕 First time login on slot "$platform" — binding device...');
 
       final newBinding = DeviceBinding(
         deviceId: deviceId,
@@ -116,9 +179,14 @@ class DeviceRestrictionCoordinator {
         boundAt: DateTime.now(),
         lastActive: DateTime.now(),
         isPermanent: true,
+        buildMode: buildMode,
       );
 
-      await deviceRepository.createBinding(userId, newBinding);
+      await deviceRepository.createBinding(
+        userId,
+        newBinding,
+        userInfo: userInfo,
+      );
       return;
     }
 
@@ -139,24 +207,48 @@ class DeviceRestrictionCoordinator {
       }
     }
 
-    // Device matches - update last active
-    print('✅ Device Matched! Updating last active...');
-    await deviceRepository.updateActivity(userId, platform);
-    print('✅ Device Binding Verified Successfully!');
+    // Device matches — update last active + refresh user info
+    debugPrint('✅ Device Matched! Updating activity...');
+    await deviceRepository.updateActivity(
+      userId,
+      platform,
+      userInfo: userInfo,
+    );
+    debugPrint('✅ Device Binding Verified Successfully!');
   }
+
+  // ---------------------------------------------------------------------------
+  // initializeDeviceDocument
+  // ---------------------------------------------------------------------------
 
   /// Initializes the device document in Firestore for a new user.
   ///
-  /// Creates a document in the `user_devices` collection with null values
-  /// for both Android and Desktop platforms. Call this immediately after
-  /// creating a new Firebase user account.
+  /// Creates a document with empty `android_debug`, `android_release`, and
+  /// `desktop` slots, plus user metadata if provided.
+  ///
+  /// Call this immediately after creating a new Firebase Auth account.
   ///
   /// Example:
   /// ```dart
-  /// final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(...);
-  /// await coordinator.initializeDeviceDocument(credential.user!.uid);
+  /// final credential = await FirebaseAuth.instance
+  ///     .createUserWithEmailAndPassword(...);
+  ///
+  /// await coordinator.initializeDeviceDocument(
+  ///   credential.user!.uid,
+  ///   userInfo: DeviceAuthUserInfo(
+  ///     userName: displayName,
+  ///     email: credential.user!.email,
+  ///     customFields: {'plan': 'free', 'role': 'user'},
+  ///   ),
+  /// );
   /// ```
-  Future<void> initializeDeviceDocument(String userId) async {
-    await deviceRepository.initializeDeviceDocument(userId);
+  Future<void> initializeDeviceDocument(
+    String userId, {
+    DeviceAuthUserInfo? userInfo,
+  }) async {
+    await deviceRepository.initializeDeviceDocument(
+      userId,
+      userInfo: userInfo,
+    );
   }
 }
